@@ -50,17 +50,18 @@ is_func _ = False
 
 build :: [LToken] -> ([LObject], [LToken])
 build [] = ([], [])
-build d@(LClose:rs) = ([], rs)
-build d@(LOpen:rs) = ((LObjList inside):same, up)
-    where
-        (inside, rest) = build rs
-        (same, up) = build rest
-
 build d@((LNamed x):rs) = ((LVar x):same, rest)
     where
         (same, rest) = build rs
 
-build d@(LLambda:(LNamed x):LDot:rs) = ((LFunc x inside):same, up)
+build d@(LOpen:LLambda:(LNamed x):LDot:rs) = ((LFunc x inside):same, up)
+    where
+        (inside, rest) = build rs
+        (same, up) = build rest
+
+build d@(LClose:rs) = ([], rs)
+
+build d@(LOpen:rs) = ((LObjList inside):same, up)
     where
         (inside, rest) = build rs
         (same, up) = build rest
