@@ -59,3 +59,26 @@ build d@(LLambda:(LNamed x):LDot:rs) = ((LFunc x inside):same, up)
         (same, up) = build rest
 
 build d = error "Error while parsing"
+
+parse :: String -> [LObject]
+parse x = fst $ build $ tokenize x
+
+-- Displaying
+display :: [LObject] -> String
+display [] = ""
+display ((LVar x):(LVar y):rs) = x ++ " " ++ (display ((LVar y):rs))
+display ((LVar x):rs) = x ++ (display rs)
+display ((LFunc x y):rs) = "(\\" ++ x ++ "." ++ (display y) ++ ")" ++ (display rs)
+display ((LObjList x):rs) = "(" ++ (display x) ++ ")" ++ (display rs)
+
+number :: String -> (String, String)
+number = number_func 1
+number_func :: Int -> String -> (String, String)
+number_func i [] = ("", "")
+number_func i ('\\':rs) = ('\\':exp, (show i)++" "++nums) -- TODO: Fix this for number bigger than 9
+    where
+        (exp, nums) = number_func (i+1) (rs)
+
+number_func i (x:rs) = (x:exp, ' ':nums)
+    where 
+        (exp, nums) = number_func i (rs)
