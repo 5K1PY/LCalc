@@ -51,9 +51,7 @@ is_func _ = False
 build :: [LToken] -> ([LObject], [LToken])
 build [] = ([], [])
 build d@(LClose:rs) = ([], rs)
-build d@(LOpen:rs)   
-    | length inside == 1 = ((head inside):same, up)
-    | otherwise          = ((LObjList inside):same, up)
+build d@(LOpen:rs) = ((LObjList inside):same, up)
     where
         (inside, rest) = build rs
         (same, up) = build rest
@@ -91,13 +89,22 @@ parse x = addTags $ fst $ build $ tokenize x
 
 
 -- Evaluating
+unpack :: [LTObject] -> [LTObject]
+unpack [] = []
+unpack ((LTObjList x):rs)
+    | length unp == 1 = (head unp):(unpack rs)
+    | otherwise       = (LTObjList unp):(unpack rs)
+    where
+        unp = unpack x
+unpack ((LTFunc a x):rs) = (LTFunc a (unpack x)):(unpack rs)
+unpack (r:rs) = r:(unpack rs)
+
 cnt :: ([LTObject] -> Bool) -> [LTObject] -> Int
 cnt _ [] = 0
 cnt f r@((LTVar x):rs) = (boolToInt $ f r) + (cnt f rs)
 cnt f r@((LTFunc x y):rs) = (boolToInt $ f r) + (cnt f y) + (cnt f rs)
 cnt f r@((LTObjList x):rs) = (boolToInt $ f r) + (cnt f x) + (cnt f rs)
 cnt f r@((Highlighted x):rs) = (boolToInt $ f r) + (cnt f [x]) + (cnt f rs)
-
 
 call :: LTObject -> LTObject -> LTObject
 call (LTFunc a x) obj = LTObjList (replaceVar x a obj)
@@ -126,11 +133,34 @@ mapVar ((Highlighted x):rs) name fn = (Highlighted mapped):(mapVar rs name fn)
 replaceVar :: [LTObject] -> String -> LTObject -> [LTObject]
 replaceVar r name obj = mapVar r name (\x -> obj)
 
+apply_ith_callable :: (LTObject -> LTObject -> LTObject) -> Int -> [LTObject] -> [LTObject]
+apply_ith_callable _ _ [] = error("No such function.")
+apply_ith_callable f i (r0@(LTVar x):rs) = r0:(apply_ith_callable f i rs)
+apply_ith_callable f i (r0@(LTFunc a x):arg:rs)
+    | i == 0    = (f r0 arg):rs
+    | i-1 < c   = (LTFunc a (apply_ith_callable f (i-1) x)):rs
+    | otherwise = r0:(apply_ith_callable f (i-1-c) rs)
+    where
+        c = cnt callable x
+apply_ith_callable f i (r0@(LTFunc a x):[]) = [LTFunc a (apply_ith_callable f i x)]
+
+apply_ith_callable f i (r0@(LTObjList x):rs)
+    | i < c     = (LTObjList (apply_ith_callable f i x)):rs
+    | otherwise = r0:(apply_ith_callable f (i-c) rs)
+    where
+        c = cnt callable x
+apply_ith_callable f i (r0@(Highlighted x):rs)
+    | i < c     = (Highlighted (head $ apply_ith_callable f i [x])):rs
+    | otherwise = r0:(apply_ith_callable f (i-c) rs)
+    where
+        c = cnt callable [x]
+
+
 -- Displaying
 display :: [LTObject] -> String
 display [] = ""
-display ((LTVar x):(LTVar y):rs) = x ++ " " ++ (display ((LTVar y):rs))
-display ((LTVar x):rs) = x ++ (display rs)
+display ((LTVar x):[]) = x
+display ((LTVar x):rs) = x ++ " " ++ (display rs)
 display ((LTFunc x y):rs) = "(\\" ++ x ++ "." ++ (display y) ++ ")" ++ (display rs)
 display ((LTObjList x):rs) = "(" ++ (display x) ++ ")" ++ (display rs)
 display (Highlighted x:rs) = "[" ++ (display [x]) ++ "]" ++ (display rs)
