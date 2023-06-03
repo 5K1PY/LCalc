@@ -71,85 +71,66 @@ build d = error "Error while parsing"
 
 data LTObject = 
     LTVar String |
-    LTFunc String [LTObject] Bool |
+    LTFunc String [LTObject] |
     LTObjList [LTObject] |
     Highlighted LTObject
   deriving Show
 
-is_callable :: LTObject -> Bool
-is_callable (LTFunc _ _ True) = True
-is_callable _ = False
+callable :: [LTObject] -> Bool
+callable ((LTFunc _ _):_:rs) = True
+callable _ = False
 
 addTags :: [LObject] -> [LTObject]
 addTags [] = []
 addTags ((LVar x):rs) = (LTVar x):(addTags rs)
-addTags ((LFunc a x):rs) = (LTFunc a (addTags x) (length rs /= 0)):(addTags rs)
+addTags ((LFunc a x):rs) = (LTFunc a (addTags x)):(addTags rs)
 addTags ((LObjList x):rs) = (LTObjList (addTags x)):(addTags rs)
 
 parse :: String -> [LTObject]
 parse x = addTags $ fst $ build $ tokenize x
 
+
 -- Evaluating
-cnt :: (LObject -> Bool) -> [LObject] -> Int
+cnt :: ([LTObject] -> Bool) -> [LTObject] -> Int
 cnt _ [] = 0
-cnt f (r0@(LVar x):rs) = (boolToInt $ f r0) + (cnt f rs)
-cnt f (r0@(LFunc x y):rs) = (boolToInt $ f r0) + (cnt f y) + (cnt f rs)
-cnt f (r0@(LObjList x):rs) = (boolToInt $ f r0) + (cnt f x) + (cnt f rs)
+cnt f r@((LTVar x):rs) = (boolToInt $ f r) + (cnt f rs)
+cnt f r@((LTFunc x y):rs) = (boolToInt $ f r) + (cnt f y) + (cnt f rs)
+cnt f r@((LTObjList x):rs) = (boolToInt $ f r) + (cnt f x) + (cnt f rs)
+cnt f r@((Highlighted x):rs) = (boolToInt $ f r) + (cnt f [x]) + (cnt f rs)
 
-{-
-replace :: (LObject -> Bool) -> [LObject] -> Int -> LObject -> [LObject]
-replace _ [] _ _ = []
-replace _ r0:r 0 obj = obj:r
-replace f (r0@(LVar x):rs) i obj = r0:(replace f rs (i-(boolToInt $ f r0)) obj)
-replace f (r0@(LFunc x y):rs) i obj
-    | i < c = (LFunc x (replace f y (i-(boolToInt $ f r0)) obj)):rs
 
+call :: LTObject -> LTObject -> LTObject
+call (LTFunc a x) obj = LTObjList (replaceVar x a obj)
+call fn _ = error((display [fn]) ++ " cannot be called")
+
+mapVar :: [LTObject] -> String -> (LTObject -> LTObject) -> [LTObject]
+mapVar [] name fn = []
+mapVar (r0@(LTVar x):rs) name fn
+    | name == x = (fn r0):(mapVar rs name fn)
+    | otherwise = r0:(mapVar rs name fn)
+
+mapVar (r0@(LTFunc a x):rs) name fn
+    | a /= name = (LTFunc a mapped):(mapVar rs name fn)
+    | otherwise = r0:(mapVar rs name fn)
     where
-        c = cnt f y
-cnt f (r0@(LFunc x y):rs) = (boolToInt $ f r0) + (cnt f y) + (cnt f rs)
-cnt f (r0@(LObjList x):rs) = (boolToInt $ f r0) + (cnt f x) + (cnt f rs)
--}
+        mapped = mapVar x name fn
 
-{- 
-evaluate :: [LObject] -> [LObject]
-evaluate (LFunc name body):arg:rs = (replace body name arg):rs
-evaluate (LFunc _ _):[] = error("No function argument.")
-evaluate _ = error("No function to evaluate.")
+mapVar ((LTObjList x):rs) name fn = (LTObjList mapped):(mapVar rs name fn)
+    where
+        mapped = mapVar x name fn
 
-replace :: [LObject] -> String -> LObject -> [LObject]
-replace [] name val = []
-replace (LVar lname):rs name val = new:(replace rs name val)
+mapVar ((Highlighted x):rs) name fn = (Highlighted mapped):(mapVar rs name fn)
     where
-        new = case lname of
-            name -> val
-            _ -> LVar lname
-replace (LObjList x):rs name val = (LObjList $ replace x name val):(replace rs name val)
-replace (LFunc a body):rs name val
- | a == name = (LObjList $ replace x name val):(replace rs name val)
- | otherwise = 
+        mapped = head $ mapVar [x] name fn
 
-evaluate_ith :: [LObject] -> Int -> (Int, [LObject])
-evaluate_ith _ [] = error("No function with such number.")
-evaluate_ith i (LVar x):rs = evaluate_ith i rs
-evaluate_ith i (LObjList x):rs
- | i < c     = evaluate_ith i x
- | otherwise = evaluate_ith (i-c) rs
-    where
-        c = cnt_func x
-evaluate_ith i lo@(LFunc arg x):rs
- | i == 0    = evaluate lo
- | i-1 < c   = evaluate_ith (i-1) x
- | otherwise = evaluate_ith (i-c-1) rs
-    where
-        c = cnt_func x
--}
+replaceVar :: [LTObject] -> String -> LTObject -> [LTObject]
+replaceVar r name obj = mapVar r name (\x -> obj)
 
 -- Displaying
 display :: [LTObject] -> String
 display [] = ""
 display ((LTVar x):(LTVar y):rs) = x ++ " " ++ (display ((LTVar y):rs))
 display ((LTVar x):rs) = x ++ (display rs)
-display ((LTFunc x y _):rs) = "(\\" ++ x ++ "." ++ (display y) ++ ")" ++ (display rs)
+display ((LTFunc x y):rs) = "(\\" ++ x ++ "." ++ (display y) ++ ")" ++ (display rs)
 display ((LTObjList x):rs) = "(" ++ (display x) ++ ")" ++ (display rs)
 display (Highlighted x:rs) = "[" ++ (display [x]) ++ "]" ++ (display rs)
-
