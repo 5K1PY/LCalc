@@ -108,7 +108,7 @@ cnt f r@((LTObjList x):rs) = (boolToInt $ f r) + (cnt f x) + (cnt f rs)
 cnt f r@((Highlighted x):rs) = (boolToInt $ f r) + (cnt f [x]) + (cnt f rs)
 
 call :: LTObject -> LTObject -> LTObject
-call (LTFunc a x) obj = LTObjList (replaceVar x a obj)
+call (LTFunc a x) obj = LTObjList (replaceVar x a (Highlighted obj))
 call fn _ = error((display [fn]) ++ " cannot be called")
 
 mapVar :: [LTObject] -> String -> (LTObject -> LTObject) -> [LTObject]
