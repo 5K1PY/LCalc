@@ -165,3 +165,21 @@ display ((LTVar x):rs) = x ++ " " ++ (display rs)
 display ((LTFunc x y):rs) = "(\\" ++ x ++ "." ++ (display y) ++ ")" ++ (display rs)
 display ((LTObjList x):rs) = "(" ++ (display x) ++ ")" ++ (display rs)
 display (Highlighted x:rs) = "[" ++ (display [x]) ++ "]" ++ (display rs)
+
+
+-- Main loop
+call_ith :: [LTObject] -> Int -> [LTObject]
+call_ith exp i = apply_ith_callable call i exp
+
+main :: IO()
+main = do
+    putStrLn "Enter lambda calculus expression:"
+    exp <- getLine
+    expressionInteract $ parse exp
+    main
+
+expressionInteract :: [LTObject] -> IO()
+expressionInteract exp = do
+    line <- getLine
+    putStrLn $ display $ call_ith exp (read line)
+    expressionInteract (unpack $ call_ith exp (read line))
