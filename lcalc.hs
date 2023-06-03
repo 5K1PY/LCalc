@@ -1,7 +1,6 @@
 import Data.Char
 import Debug.Trace
 
-debug = flip trace
 -- Utilities
 boolToInt :: Bool -> Int
 boolToInt True = 1
@@ -30,9 +29,7 @@ tokenize (')':rs) = LClose : tokenize rs
 tokenize ('\\':rs) = LLambda : tokenize rs
 tokenize ('.':rs) = LDot : tokenize rs
 tokenize (' ':rs) = tokenize rs
-tokenize r@(r0:rs)
-    | nextToken == "" = error ("Unknown symbol " ++ [r0])
-    | otherwise = (LNamed nextToken):(tokenize $ dropWhile isNotSpecial r)
+tokenize r@(r0:rs) = (LNamed nextToken):(tokenize $ dropWhile isNotSpecial r)
     where
         nextToken = takeWhile isNotSpecial r
 
@@ -169,15 +166,25 @@ apply_ith_callable f i (r0@(Highlighted x):rs)
 
 
 -- Displaying
+magenta = "\ESC[95m" 
+green = "\ESC[92m"
+reset = "\ESC[39;49m"
+
+spaced :: [LTObject] -> String
+spaced ((LTVar _):rs) = " "
+spaced ((Highlighted x):rs) = spaced [x]
+spaced _ = ""
 
 display :: [LTObject] -> String
 display [] = ""
-display ((LTVar x):[]) = x
-display ((LTVar x):rs) = x ++ " " ++ (display rs)
-display ((LTFunc x y):rs) = "(λ" ++ x ++ "." ++ (display y) ++ ")" ++ (display rs)
-display ((LTObjList x):rs) = "(" ++ (display x) ++ ")" ++ (display rs)
-display ((Highlighted x):[]) = "[" ++ (display [x]) ++ "]"
-display ((Highlighted x):rs) = "[" ++ (display [x]) ++ "] " ++ (display rs)
+display ((LTVar x):rs) = x ++ (spaced rs) ++ (display rs)
+display r@((LTFunc x y):rs) = "(" ++ lambda ++ x ++ "." ++ (display y) ++ ")" ++ (spaced rs) ++ (display rs)
+    where
+        lambda = case callable r of
+            True -> magenta ++ "λ" ++ reset
+            False -> "λ"
+display ((LTObjList x):rs) = "(" ++ (display x) ++ ")" ++ (spaced rs) ++ (display rs)
+display ((Highlighted x):rs) = green ++ (display [x]) ++ reset ++ (spaced rs) ++ (display rs)
 
 
 -- Main loop
@@ -190,17 +197,16 @@ main :: IO()
 main = do
     putStrLn "Enter lambda calculus expression:"
     exp <- getLine
-    expressionInteract $ parse exp
+    expressionInteract $ unpack $ parse exp
     main
 
+-- TODO
 expressionInteract :: [LTObject] -> IO()
 expressionInteract exp = do
     if (cnt callable exp) == 0 then do
-        putStrLn $ display exp
         putStrLn "Expression is in normal form." 
-        return ()
     else do
-    line <- getLine
-    putStrLn $ display $ unpack $ highlight_ith exp (read line)
-    putStrLn $ display $ unpack $ call_ith exp (read line)
-    expressionInteract (unpack $ unhighlight $ call_ith exp (read line))
+        line <- getLine
+        putStrLn $ display $ unpack $ highlight_ith exp (read line)
+        putStrLn $ display $ unpack $ call_ith exp (read line)
+        expressionInteract (unpack $ unhighlight $ call_ith exp (read line))
