@@ -1,6 +1,8 @@
 import Data.Char
 import Debug.Trace
 
+debug = flip trace
+
 -- Utilities
 boolToInt :: Bool -> Int
 boolToInt True = 1
@@ -11,6 +13,9 @@ contains x [] = False
 contains x (y:rs) 
     | x == y    = True
     | otherwise = contains x rs
+
+dropTail :: Show a => Int -> [a] -> [a]
+dropTail x l = take (length l - x) l
 
 -- Tokenization
 data LToken
@@ -64,7 +69,7 @@ build d = error "Error while parsing"
 data Highlight = Base | Argument | Full deriving (Eq, Show)
 data LTObject = 
     LTVar String Highlight |
-    LTFunc String [LTObject] Highlight |
+    LTFunc String LTObject Highlight |
     LTObjList [LTObject] Highlight
   deriving Show
 
@@ -78,7 +83,7 @@ callable _ = False
 
 addTags :: LObject -> LTObject
 addTags (LVar x) = (LTVar x Base)
-addTags (LFunc a x) = (LTFunc a (map addTags x) Base)
+addTags (LFunc a x) = (LTFunc a (LTObjList (map addTags x) Base) Base)
 addTags (LObjList x) = (LTObjList (map addTags x) Base)
 
 parse :: String -> LTObject
@@ -93,7 +98,7 @@ mapLT f obj
         (new_obj, apply) = f obj
 
 subMapLT :: (LTObject -> (LTObject, Bool)) -> LTObject -> LTObject
-subMapLT f (LTFunc a x h) = LTFunc a (map (mapLT f) x) h
+subMapLT f (LTFunc a x h) = LTFunc a (mapLT f x) h
 subMapLT f (LTObjList x h) = LTObjList (map (mapLT f) x) h
 subMapLT f obj = obj
 
@@ -113,16 +118,16 @@ map_highlight :: Highlight -> LTObject -> LTObject
 map_highlight h = mapLT (set_highlight h)
 
 call :: LTObject -> LTObject
-call (LTObjList ((LTFunc a x h1):arg:rest) h2) = (LTObjList (replaced:rest) h2)
+call (LTObjList ((LTFunc a x _):arg:rest) h) = (LTObjList (replaced:rest) h)
     where
-        replaced = mapLT (replaceVar a (map_highlight Full arg)) (LTObjList x h1)
+        replaced = mapLT (replaceVar a (map_highlight Full arg)) x
 call obj = error((display $ map_highlight Base $ obj) ++ " cannot be called")
 
 highlight_call :: LTObject -> LTObject
 highlight_call (LTObjList (f@(LTFunc a x h1):arg:rest) h2) =
     (LTObjList ((LTFunc a replaced Argument):(map_highlight Full arg):rest) h2)
     where
-        replaced = map (mapLT (replaceVar a (LTVar a Full))) x
+        replaced = mapLT (replaceVar a (LTVar a Argument)) x
 highlight_call obj = error((display $ map_highlight Base $ obj) ++ " cannot be called")
 
 replaceVar :: String -> LTObject -> LTObject -> (LTObject, Bool)
@@ -138,7 +143,7 @@ replaceVar name to obj = (obj, True)
 
 cnt :: (LTObject -> Bool) -> LTObject -> Int
 cnt f r@(LTVar x h) = (boolToInt $ f r)
-cnt f r@(LTFunc a x h) = (boolToInt $ f r) + sum (map (cnt f) x)
+cnt f r@(LTFunc a x h) = (boolToInt $ f r) + (cnt f x)
 cnt f r@(LTObjList x h) = (boolToInt $ f r) + sum (map (cnt f) x)
 
 apply_ith :: (LTObject -> LTObject) -> Int -> LTObject -> LTObject
@@ -148,7 +153,7 @@ apply_ith_callable :: (LTObject -> LTObject) -> Int -> [LTObject] -> [LTObject]
 apply_ith_callable _ _ [] = error("No such function.")
 apply_ith_callable f i (r0@(LTVar a h):rs) = r0:(apply_ith_callable f i rs)
 apply_ith_callable f i (r0@(LTFunc a x h):rs)
-    | i < c     = (LTFunc a (apply_ith_callable f i x) h):rs
+    | i < c     = (LTFunc a (apply_ith f i x) h):rs
     | otherwise = r0:(apply_ith_callable f (i-c) rs)
     where
         c = cnt callable r0
@@ -170,15 +175,34 @@ highlight Argument = green
 highlight Full = blue
 highlight Base = reset
 
-display = display_one Base
+display = display_one False False Base
 
-display_one :: Highlight -> LTObject -> String
-display_one h0 (LTVar name h) = (highlight h) ++ name ++ (highlight h0) ++ " "
-display_one h0 (LTFunc a x h) = (highlight h) ++ "(λ" ++ a ++ "." ++ (display_list h x) ++ ")" ++ (highlight h0) ++ " "
-display_one h0 (LTObjList x h) = (highlight h) ++ "(" ++ (display_list h x) ++ ")" ++ (highlight h0) ++ " "
+display_one :: Bool -> Bool -> Highlight -> LTObject -> String
+display_one _ _ h0 (LTVar name h) = (highlight h) ++ name ++ (highlight h0) ++ " "
+display_one cal _ h0 (LTFunc a x h) = (highlight full) ++ "(" ++ lambda ++ arg ++ "." ++ contents ++ ")" ++ (highlight h0) ++ " "
+    where
+        lambda = case cal of
+            False -> "λ" 
+            True -> (magenta) ++ "λ" ++ (highlight full)
+        full = case h of
+            Full -> Full
+            _ -> Base
+        arg = case h of
+            Argument -> (highlight Argument) ++ a ++ (highlight Base) 
+            _ -> (highlight h) ++ a
+        contents = dropTail 1 $ display_one False False full x
 
-display_list :: Highlight -> [LTObject] -> String
-display_list h x = foldr (++) "" (map (display_one h) x)
+display_one _ close h0 obj@(LTObjList x h) 
+    | close     = (highlight h) ++ "(" ++ contents ++ ")" ++ (highlight h0) ++ " "
+    | otherwise = (highlight h) ++ contents ++ (highlight h0) ++ " "
+    where
+        contents = dropTail 1 $ display_list True h x
+
+display_list :: Bool -> Highlight -> [LTObject] -> String
+display_list c h x = foldl (++) (display_one (length rest >= 1) c h first) (map (display_one False c h) rest)
+    where
+        first = head x
+        rest = drop 1 x
 
 -- Main loop
 highlight_ith :: LTObject -> Int -> LTObject
@@ -196,10 +220,11 @@ main = do
 -- TODO: Fix invalid user input
 expressionInteract :: LTObject -> IO()
 expressionInteract exp = do
+    putStrLn $ display exp
     if (cnt callable exp) == 0 then do
         putStrLn "Expression is in normal form." 
     else do
         line <- getLine
-        putStrLn $ display $ unpack $ highlight_ith exp (read line)
-        putStrLn $ display $ unpack $ call_ith exp (read line)
-        expressionInteract (unpack $ map_highlight Base $ call_ith exp (read line))
+        putStrLn $ display $ unpack $ highlight_ith exp2 (read line)
+        expressionInteract (unpack $ call_ith exp2 (read line))
+        where exp2 = map_highlight Base exp
