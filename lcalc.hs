@@ -41,10 +41,6 @@ data LObject =
     LObjList [LObject]
   deriving Show
 
-is_func :: LObject -> Bool
-is_func (LFunc _ _) = True
-is_func _ = False
-
 build :: [LToken] -> ([LObject], [LToken])
 build [] = ([], [])
 build d@((LNamed x):rs) = ((LVar x):same, rest)
@@ -72,91 +68,96 @@ data LTObject =
     LTObjList [LTObject] Highlight
   deriving Show
 
-callable :: [LTObject] -> Bool
-callable ((LTFunc _ _ _):_:rs) = True
+is_func :: LTObject -> Bool
+is_func (LTFunc _ _ _) = True
+is_func _ = False
+
+callable :: LTObject -> Bool
+callable (LTObjList ((LTFunc _ _ _):arg:args) _) = True
 callable _ = False
 
-addTags :: [LObject] -> [LTObject]
-addTags [] = []
-addTags ((LVar x):rs) = (LTVar x Base):(addTags rs)
-addTags ((LFunc a x):rs) = (LTFunc a (addTags x) Base):(addTags rs)
-addTags ((LObjList x):rs) = (LTObjList (addTags x) Base):(addTags rs)
+addTags :: LObject -> LTObject
+addTags (LVar x) = (LTVar x Base)
+addTags (LFunc a x) = (LTFunc a (map addTags x) Base)
+addTags (LObjList x) = (LTObjList (map addTags x) Base)
 
-parse :: String -> [LTObject]
-parse x = addTags $ fst $ build $ tokenize x
-
+parse :: String -> LTObject
+parse x = LTObjList (map addTags (fst $ build $ tokenize x)) Base
 
 -- Evaluating
-unpack :: [LTObject] -> [LTObject]
-unpack [] = []
-unpack (r0@(LTVar _ _):rs) = r0:(unpack rs)
-unpack ((LTObjList x h):rs)
-    | length unp == 1 = (head unp):(unpack rs)
-    | otherwise       = (LTObjList unp h):(unpack rs)
+mapLT :: (LTObject -> (LTObject, Bool)) -> LTObject -> LTObject
+mapLT f obj
+    | apply     = subMapLT f new_obj
+    | otherwise = new_obj
     where
-        unp = unpack x
-unpack ((LTFunc a x h):rs) = (LTFunc a (unpack x) h):(unpack rs)
+        (new_obj, apply) = f obj
 
-set_highlight :: Highlight -> LTObject -> LTObject
-set_highlight h (LTVar a _) = (LTVar a h)
-set_highlight h (LTObjList x _) = (LTObjList (map (set_highlight h) x) h)
-set_highlight h (LTFunc a x _) = (LTFunc a (map (set_highlight h) x) h)
+subMapLT :: (LTObject -> (LTObject, Bool)) -> LTObject -> LTObject
+subMapLT f (LTFunc a x h) = LTFunc a (map (mapLT f) x) h
+subMapLT f (LTObjList x h) = LTObjList (map (mapLT f) x) h
+subMapLT f obj = obj
 
-unhighlight :: [LTObject] -> [LTObject]
-unhighlight [] = []
-unhighlight (r0@(LTVar a _):rs) = (LTVar a Base):(unhighlight rs)
-unhighlight ((LTObjList x _):rs) = (LTObjList (unhighlight x) Base):(unhighlight rs)
-unhighlight ((LTFunc a x _):rs) = (LTFunc a (unhighlight x) Base):(unhighlight rs)
+unpack_one :: LTObject -> (LTObject, Bool)
+unpack_one (LTObjList (x:[]) h) = (x, True)
+unpack_one obj = (obj, True)
 
-cnt :: ([LTObject] -> Bool) -> [LTObject] -> Int
-cnt _ [] = 0
-cnt f r@((LTVar x _):rs) = (boolToInt $ f r) + (cnt f rs)
-cnt f r@((LTFunc x y _):rs) = (boolToInt $ f r) + (cnt f y) + (cnt f rs)
-cnt f r@((LTObjList x _):rs) = (boolToInt $ f r) + (cnt f x) + (cnt f rs)
+unpack :: LTObject -> LTObject
+unpack = mapLT unpack_one
 
-call :: LTObject -> LTObject -> [LTObject]
-call (LTFunc a x _) obj = [LTObjList (replaceVar x a (set_highlight Full obj)) Base]
-call fn _ = error((display [fn]) ++ " cannot be called")
+set_highlight :: Highlight -> LTObject -> (LTObject, Bool)
+set_highlight h (LTVar a _) = ((LTVar a h), True)
+set_highlight h (LTObjList x _) = ((LTObjList x h), True)
+set_highlight h (LTFunc a x _) = ((LTFunc a x h), True)
 
-highlight_call :: LTObject -> LTObject -> [LTObject]
-highlight_call (LTFunc a x h) obj = [LTFunc a (replaceVar x a (LTVar a Full)) Argument, (set_highlight Full obj)]
-highlight_call fn _ = error((display [fn]) ++ " cannot be called")
+map_highlight :: Highlight -> LTObject -> LTObject
+map_highlight h = mapLT (set_highlight h)
 
-mapVar :: [LTObject] -> String -> (LTObject -> LTObject) -> [LTObject]
-mapVar [] name fn = []
-mapVar (r0@(LTVar x h):rs) name fn
-    | name == x = (fn r0):(mapVar rs name fn)
-    | otherwise = r0:(mapVar rs name fn)
-
-mapVar (r0@(LTFunc a x h):rs) name fn
-    | a /= name = (LTFunc a mapped h):(mapVar rs name fn)
-    | otherwise = r0:(mapVar rs name fn)
+call :: LTObject -> LTObject
+call (LTObjList ((LTFunc a x h1):arg:rest) h2) = (LTObjList (replaced:rest) h2)
     where
-        mapped = mapVar x name fn
+        replaced = mapLT (replaceVar a (map_highlight Full arg)) (LTObjList x h1)
+call obj = error((display $ map_highlight Base $ obj) ++ " cannot be called")
 
-mapVar ((LTObjList x h):rs) name fn = (LTObjList mapped h):(mapVar rs name fn)
+highlight_call :: LTObject -> LTObject
+highlight_call (LTObjList (f@(LTFunc a x h1):arg:rest) h2) =
+    (LTObjList ((LTFunc a replaced Argument):(map_highlight Full arg):rest) h2)
     where
-        mapped = mapVar x name fn
+        replaced = map (mapLT (replaceVar a (LTVar a Full))) x
+highlight_call obj = error((display $ map_highlight Base $ obj) ++ " cannot be called")
 
-replaceVar :: [LTObject] -> String -> LTObject -> [LTObject]
-replaceVar r name obj = mapVar r name (\x -> obj)
+replaceVar :: String -> LTObject -> LTObject -> (LTObject, Bool)
+replaceVar name to obj@(LTVar a h)
+    | a == name = (to, True)
+    | otherwise = (obj, True)
 
-apply_ith_callable :: (LTObject -> LTObject -> [LTObject]) -> Int -> [LTObject] -> [LTObject]
+replaceVar name to f@(LTFunc a _ _)
+    | name == a = (f, False)
+    | otherwise = (f, True)
+
+replaceVar name to obj = (obj, True)
+
+cnt :: (LTObject -> Bool) -> LTObject -> Int
+cnt f r@(LTVar x h) = (boolToInt $ f r)
+cnt f r@(LTFunc a x h) = (boolToInt $ f r) + sum (map (cnt f) x)
+cnt f r@(LTObjList x h) = (boolToInt $ f r) + sum (map (cnt f) x)
+
+apply_ith :: (LTObject -> LTObject) -> Int -> LTObject -> LTObject
+apply_ith f i obj = head $ apply_ith_callable f i [obj]
+
+apply_ith_callable :: (LTObject -> LTObject) -> Int -> [LTObject] -> [LTObject]
 apply_ith_callable _ _ [] = error("No such function.")
-apply_ith_callable f i (r0@(LTVar x h):rs) = r0:(apply_ith_callable f i rs)
-apply_ith_callable f i (r0@(LTFunc a x h):arg:rs)
-    | i == 0    = (f r0 arg) ++ rs
-    | i-1 < c   = (LTFunc a (apply_ith_callable f (i-1) x) h):rs
-    | otherwise = r0:(apply_ith_callable f (i-1-c) rs)
+apply_ith_callable f i (r0@(LTVar a h):rs) = r0:(apply_ith_callable f i rs)
+apply_ith_callable f i (r0@(LTFunc a x h):rs)
+    | i < c     = (LTFunc a (apply_ith_callable f i x) h):rs
+    | otherwise = r0:(apply_ith_callable f (i-c) rs)
     where
-        c = cnt callable x
-apply_ith_callable f i (r0@(LTFunc a x h):[]) = [LTFunc a (apply_ith_callable f i x) h]
-
+        c = cnt callable r0
+apply_ith_callable f 0 ((r0@(LTObjList ((LTFunc _ _ _):arg:args) h)):rs) = (f r0):rs
 apply_ith_callable f i (r0@(LTObjList x h):rs)
     | i < c     = (LTObjList (apply_ith_callable f i x) h):rs
     | otherwise = r0:(apply_ith_callable f (i-c) rs)
     where
-        c = cnt callable x
+        c = cnt callable r0
 
 -- Displaying
 magenta = "\ESC[95m" 
@@ -171,28 +172,27 @@ highlight :: String -> Highlight -> String
 highlight s Full = green ++ s ++ reset
 highlight s _ = s
 
-display :: [LTObject] -> String
-display [] = ""
-display ((LTVar x h):rs) = (highlight x h) ++ (spaced rs) ++ (display rs)
-display r@((LTFunc x y h):rs) =
-    (highlight ("(" ++ lambda ++ arg ++ ".") h) ++ (display y) ++ (highlight (")") h) ++ (spaced rs) ++ (display rs)
+display :: LTObject -> String
+display obj = displayList [obj]
+
+displayList :: [LTObject] -> String
+displayList [] = ""
+displayList ((LTVar x h):rs) = (highlight x h) ++ (spaced rs) ++ (displayList rs)
+displayList r@((LTFunc x y h):rs) =
+    (highlight ("(" ++ "λ" ++ arg ++ ".") h) ++ (displayList y) ++ (highlight (")") h) ++ (spaced rs) ++ (displayList rs)
     where
-        lambda = case (callable r, h) of
-            (True, Full) -> magenta ++ "λ" ++ green
-            (True, _) -> magenta ++ "λ" ++ reset
-            (False, _) -> "λ"
         arg = case h of
             Argument -> green ++ x ++ reset
             _ -> x
  
-display ((LTObjList x h):rs) = (highlight ("(" ++ (display x) ++ ")") h) ++ (spaced rs) ++ (display rs)
+displayList ((LTObjList x h):rs) = (highlight ("(" ++ (displayList x) ++ ")") h) ++ (spaced rs) ++ (displayList rs)
 
 
 -- Main loop
-highlight_ith :: [LTObject] -> Int -> [LTObject]
-highlight_ith exp i = apply_ith_callable highlight_call i exp
-call_ith :: [LTObject] -> Int -> [LTObject]
-call_ith exp i = apply_ith_callable call i exp
+highlight_ith :: LTObject -> Int -> LTObject
+highlight_ith exp i = apply_ith highlight_call i exp
+call_ith :: LTObject -> Int -> LTObject
+call_ith exp i = apply_ith call i exp
 
 main :: IO()
 main = do
@@ -202,7 +202,7 @@ main = do
     main
 
 -- TODO: Fix invalid user input
-expressionInteract :: [LTObject] -> IO()
+expressionInteract :: LTObject -> IO()
 expressionInteract exp = do
     if (cnt callable exp) == 0 then do
         putStrLn "Expression is in normal form." 
@@ -210,4 +210,4 @@ expressionInteract exp = do
         line <- getLine
         putStrLn $ display $ unpack $ highlight_ith exp (read line)
         putStrLn $ display $ unpack $ call_ith exp (read line)
-        expressionInteract (unpack $ unhighlight $ call_ith exp (read line))
+        expressionInteract (unpack $ map_highlight Base $ call_ith exp (read line))
