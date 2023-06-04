@@ -1,6 +1,8 @@
 import Data.Char
+import Data.List
 import Debug.Trace
 
+-- TODO: Remove debugging
 debug = flip trace
 
 -- Utilities
@@ -71,7 +73,7 @@ data LTObject =
     LTVar String Highlight |
     LTFunc String LTObject Highlight |
     LTObjList [LTObject] Highlight
-  deriving Show
+  deriving (Eq, Show)
 
 is_func :: LTObject -> Bool
 is_func (LTFunc _ _ _) = True
@@ -89,7 +91,7 @@ addTags (LObjList x) = (LTObjList (map addTags x) Base)
 parse :: String -> LTObject
 parse x = LTObjList (map addTags (fst $ build $ tokenize x)) Base
 
--- Evaluating
+-- Functions for evaluating
 mapLT :: (LTObject -> (LTObject, Bool)) -> LTObject -> LTObject
 mapLT f obj
     | apply     = subMapLT f new_obj
@@ -117,18 +119,66 @@ set_highlight h (LTFunc a x _) = ((LTFunc a x h), True)
 map_highlight :: Highlight -> LTObject -> LTObject
 map_highlight h = mapLT (set_highlight h)
 
-call :: LTObject -> LTObject
-call (LTObjList ((LTFunc a x _):arg:rest) h) = (LTObjList (replaced:rest) h)
+
+-- alpha reduction
+name :: String -> Int -> String
+name x i = x ++ (show i)
+
+free_name :: String -> [String] -> String
+free_name n taken = head [(name n i) | i <- [1..], not $ contains (name n i) taken]
+
+collect_args :: LTObject -> [String]
+collect_args (LTVar _ _) = []
+collect_args (LTFunc a x _) = a:(collect_args x)
+collect_args (LTObjList x _) = foldr (++) [] (map collect_args x)
+
+collect_free_vars :: [String] -> LTObject -> [String]
+collect_free_vars bound (LTVar name _)
+    | contains name bound = []
+    | otherwise = [name]
+collect_free_vars bound (LTFunc arg body _) = collect_free_vars (arg:bound) body
+collect_free_vars bound (LTObjList body _) = foldr (++) [] (map (collect_free_vars bound) body)
+
+alpha :: LTObject -> LTObject
+alpha obj@(LTObjList (f@(LTFunc a x _):arg:rest) h)
+    | length same == 0 = obj
+    | otherwise        = (LTObjList (replaced:arg:rest) Argument)
+    where
+        same = intersect (collect_args f) (collect_free_vars [] arg)
+        name = free_name (head same) (collect_free_vars [] f)
+        replaced = (mapLT (renameArg (head same) name) f)
+alpha obj = error((display $ map_highlight Base $ obj) ++ " cannot be called")
+
+alphaRep :: LTObject -> Int -> LTObject
+alphaRep obj i
+    | obj == reduced = obj
+    | otherwise      = alphaRep reduced i
+    where
+        reduced = apply_ith alpha i obj
+
+renameArg :: String -> String -> LTObject -> (LTObject, Bool)
+renameArg name new_name f@(LTFunc a body _)
+    | name == a = ((LTFunc new_name content Argument), False)
+    | otherwise = (f, True)
+    where
+        content = mapLT (replaceVar name (LTVar new_name Argument)) body
+
+renameArg _ _ obj = (obj, True)
+
+
+-- Beta reduction
+beta :: LTObject -> LTObject
+beta (LTObjList ((LTFunc a x _):arg:rest) h) = (LTObjList (replaced:rest) h)
     where
         replaced = mapLT (replaceVar a (map_highlight Full arg)) x
-call obj = error((display $ map_highlight Base $ obj) ++ " cannot be called")
+beta obj = error((display $ map_highlight Base $ obj) ++ " cannot be called")
 
-highlight_call :: LTObject -> LTObject
-highlight_call (LTObjList (f@(LTFunc a x h1):arg:rest) h2) =
+highlight_beta :: LTObject -> LTObject
+highlight_beta (LTObjList (f@(LTFunc a x h1):arg:rest) h2) =
     (LTObjList ((LTFunc a replaced Argument):(map_highlight Full arg):rest) h2)
     where
         replaced = mapLT (replaceVar a (LTVar a Argument)) x
-highlight_call obj = error((display $ map_highlight Base $ obj) ++ " cannot be called")
+highlight_beta obj = error((display $ map_highlight Base $ obj) ++ " cannot be called")
 
 replaceVar :: String -> LTObject -> LTObject -> (LTObject, Bool)
 replaceVar name to obj@(LTVar a h)
@@ -207,9 +257,9 @@ display_list c h x = foldl (++) (display_one (length rest >= 1) c h first) (map 
 
 -- Main loop
 highlight_ith :: LTObject -> Int -> LTObject
-highlight_ith exp i = apply_ith highlight_call i exp
+highlight_ith exp i = apply_ith highlight_beta i exp
 call_ith :: LTObject -> Int -> LTObject
-call_ith exp i = apply_ith call i exp
+call_ith exp i = apply_ith beta i exp
 
 main :: IO()
 main = do
@@ -226,6 +276,19 @@ expressionInteract exp = do
         putStrLn "Expression is in normal form." 
     else do
         line <- getLine
-        putStrLn $ display $ unpack $ highlight_ith exp2 (read line)
-        expressionInteract (unpack $ call_ith exp2 (read line))
-        where exp2 = map_highlight Base exp
+        alphaReduceIO unh_exp (read line)
+        let rep_exp = map_highlight Base (alphaRep unh_exp (read line))
+        putStrLn $ display $ unpack $ highlight_ith rep_exp (read line)
+        expressionInteract (unpack $ call_ith rep_exp (read line))
+        where
+            unh_exp = map_highlight Base exp
+
+alphaReduceIO :: LTObject -> Int -> IO()
+alphaReduceIO exp i = do
+    if (exp == exp2) then do
+        return ()
+    else do
+        putStrLn $ (display $ unpack exp2) ++ "\t(α-equivalence)"
+        (alphaReduceIO exp2 i)
+    where
+        exp2 = apply_ith alpha i exp
