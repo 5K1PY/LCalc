@@ -105,6 +105,7 @@ subMapLT f (LTObjList x h) = LTObjList (map (mapLT f) x) h
 subMapLT f obj = obj
 
 unpack_one :: LTObject -> (LTObject, Bool)
+unpack_one (LTFunc _ l@(LTObjList [] _) _) = (l, True)
 unpack_one (LTObjList (x:[]) h) = (x, True)
 unpack_one obj = (obj, True)
 
@@ -270,18 +271,21 @@ main = do
     main
 
 -- TODO: Fix invalid user input
+-- TODO: Exiting
 expressionInteract :: LTObject -> String -> IO()
 expressionInteract exp msg = do
     putStrLn $ (display exp) ++ msg
-    if (cnt callable exp) == 0 then do
+    if callables == 0 then do
         putStrLn "Expression is in normal form." 
     else do
+        putStr $ "Choose callable to evaluate (0-" ++ (show (callables-1)) ++ "): " 
         line <- getLine
         alphaReduceIO unh_exp (read line)
         let rep_exp = map_highlight Base (alphaRep unh_exp (read line))
         putStrLn $ display $ unpack $ highlight_ith rep_exp (read line)
         expressionInteract (unpack $ call_ith rep_exp (read line)) "\t(β-reduction)"
         where
+            callables = cnt callable exp
             unh_exp = map_highlight Base exp
 
 alphaReduceIO :: LTObject -> Int -> IO()
