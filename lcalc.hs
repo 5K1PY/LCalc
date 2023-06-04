@@ -132,7 +132,7 @@ highlight_call obj = error((display $ map_highlight Base $ obj) ++ " cannot be c
 
 replaceVar :: String -> LTObject -> LTObject -> (LTObject, Bool)
 replaceVar name to obj@(LTVar a h)
-    | a == name = (to, True)
+    | a == name = (to, False)
     | otherwise = (obj, True)
 
 replaceVar name to f@(LTFunc a _ _)
@@ -159,10 +159,11 @@ apply_ith_callable f i (r0@(LTFunc a x h):rs)
         c = cnt callable r0
 apply_ith_callable f 0 ((r0@(LTObjList ((LTFunc _ _ _):arg:args) h)):rs) = (f r0):rs
 apply_ith_callable f i (r0@(LTObjList x h):rs)
-    | i < c     = (LTObjList (apply_ith_callable f i x) h):rs
-    | otherwise = r0:(apply_ith_callable f (i-c) rs)
+    | j < c     = (LTObjList (apply_ith_callable f j x) h):rs
+    | otherwise = r0:(apply_ith_callable f (j-c) rs)
     where
         c = cnt callable r0
+        j = i - (boolToInt $ callable r0)
 
 -- Displaying
 magenta = "\ESC[95m"
