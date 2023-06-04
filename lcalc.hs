@@ -265,13 +265,13 @@ main :: IO()
 main = do
     putStrLn "Enter lambda calculus expression:"
     exp <- getLine
-    expressionInteract $ unpack $ parse exp
+    expressionInteract (unpack $ parse exp) ""
     main
 
 -- TODO: Fix invalid user input
-expressionInteract :: LTObject -> IO()
-expressionInteract exp = do
-    putStrLn $ display exp
+expressionInteract :: LTObject -> String -> IO()
+expressionInteract exp msg = do
+    putStrLn $ (display exp) ++ msg
     if (cnt callable exp) == 0 then do
         putStrLn "Expression is in normal form." 
     else do
@@ -279,7 +279,7 @@ expressionInteract exp = do
         alphaReduceIO unh_exp (read line)
         let rep_exp = map_highlight Base (alphaRep unh_exp (read line))
         putStrLn $ display $ unpack $ highlight_ith rep_exp (read line)
-        expressionInteract (unpack $ call_ith rep_exp (read line))
+        expressionInteract (unpack $ call_ith rep_exp (read line)) "\t(β-reduction)"
         where
             unh_exp = map_highlight Base exp
 
@@ -288,7 +288,7 @@ alphaReduceIO exp i = do
     if (exp == exp2) then do
         return ()
     else do
-        putStrLn $ (display $ unpack exp2) ++ "\t(α-equivalence)"
+        putStrLn $ (display $ unpack exp2) ++ "\t(α-converison)"
         (alphaReduceIO exp2 i)
     where
         exp2 = apply_ith alpha i exp
