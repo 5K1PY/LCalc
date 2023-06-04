@@ -160,33 +160,25 @@ apply_ith_callable f i (r0@(LTObjList x h):rs)
         c = cnt callable r0
 
 -- Displaying
-magenta = "\ESC[95m" 
+magenta = "\ESC[95m"
+blue = "\ESC[96m"
 green = "\ESC[92m"
 reset = "\ESC[39;49m"
 
-spaced :: [LTObject] -> String
-spaced ((LTVar _ _):rs) = " "
-spaced _ = ""
+highlight :: Highlight -> String
+highlight Argument = green
+highlight Full = blue
+highlight Base = reset
 
-highlight :: String -> Highlight -> String
-highlight s Full = green ++ s ++ reset
-highlight s _ = s
+display = display_one Base
 
-display :: LTObject -> String
-display obj = displayList [obj]
+display_one :: Highlight -> LTObject -> String
+display_one h0 (LTVar name h) = (highlight h) ++ name ++ (highlight h0) ++ " "
+display_one h0 (LTFunc a x h) = (highlight h) ++ "(λ" ++ a ++ "." ++ (display_list h x) ++ ")" ++ (highlight h0) ++ " "
+display_one h0 (LTObjList x h) = (highlight h) ++ "(" ++ (display_list h x) ++ ")" ++ (highlight h0) ++ " "
 
-displayList :: [LTObject] -> String
-displayList [] = ""
-displayList ((LTVar x h):rs) = (highlight x h) ++ (spaced rs) ++ (displayList rs)
-displayList r@((LTFunc x y h):rs) =
-    (highlight ("(" ++ "λ" ++ arg ++ ".") h) ++ (displayList y) ++ (highlight (")") h) ++ (spaced rs) ++ (displayList rs)
-    where
-        arg = case h of
-            Argument -> green ++ x ++ reset
-            _ -> x
- 
-displayList ((LTObjList x h):rs) = (highlight ("(" ++ (displayList x) ++ ")") h) ++ (spaced rs) ++ (displayList rs)
-
+display_list :: Highlight -> [LTObject] -> String
+display_list h x = foldr (++) "" (map (display_one h) x)
 
 -- Main loop
 highlight_ith :: LTObject -> Int -> LTObject
