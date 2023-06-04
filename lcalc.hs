@@ -89,7 +89,7 @@ addTags (LFunc a x) = (LTFunc a (LTObjList (map addTags x) Base) Base)
 addTags (LObjList x) = (LTObjList (map addTags x) Base)
 
 parse :: String -> LTObject
-parse x = LTObjList (map addTags (fst $ build $ tokenize x)) Base
+parse x = LTObjList (map addTags (fst $ build $ tokenize ("(" ++ x ++ ")"))) Base
 
 -- Functions for evaluating
 mapLT :: (LTObject -> (LTObject, Bool)) -> LTObject -> LTObject
@@ -250,6 +250,7 @@ display_one _ close h0 obj@(LTObjList x h)
         contents = dropTail 1 $ display_list True h x
 
 display_list :: Bool -> Highlight -> [LTObject] -> String
+display_list _ _ [] = ""
 display_list c h x = foldl (++) (display_one (length rest >= 1) c h first) (map (display_one False c h) rest)
     where
         first = head x
