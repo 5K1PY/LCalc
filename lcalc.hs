@@ -114,8 +114,7 @@ subMapLT f (LTObjList x h) = LTObjList (map (mapLT f) x) h
 subMapLT f obj = obj
 
 unpack_one :: LTObject -> (LTObject, Bool)
-unpack_one (LTFunc _ l@(LTObjList [] _) _) = (l, True)
-unpack_one (LTObjList (x:[]) h) = (x, True)
+unpack_one (LTObjList (x:[]) h) = (fst $ unpack_one x, False)
 unpack_one obj = (obj, True)
 
 unpack :: LTObject -> LTObject
