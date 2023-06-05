@@ -41,32 +41,41 @@ tokenize r@(r0:rs) = (LNamed nextToken):(tokenize $ dropWhile isNotSpecial r)
         nextToken = takeWhile isNotSpecial r
 
 -- Building AST
--- TODO: Unmatched parenthesis
 data LObject = 
     LVar String |
     LFunc String [LObject] |
     LObjList [LObject]
   deriving Show
 
-build :: [LToken] -> ([LObject], [LToken])
-build [] = ([], [])
-build d@((LNamed x):rs) = ((LVar x):same, rest)
+
+build :: [LToken] -> LTObject
+build tokens
+    | length rest == 0 = LTObjList (map addTags parsed) Base
+    | otherwise        = error "Unmatched parenthesis."
     where
-        (same, rest) = build rs
+        (parsed, rest) = _build 0 tokens
 
-build d@(LOpen:LLambda:(LNamed x):LDot:rs) = ((LFunc x inside):same, up)
+_build :: Int -> [LToken] -> ([LObject], [LToken])
+_build 0 [] = ([], [])
+_build _ [] = error "Unmatched parenthesis."
+_build depth d@((LNamed x):rs) = ((LVar x):same, rest)
     where
-        (inside, rest) = build rs
-        (same, up) = build rest
+        (same, rest) = _build depth rs
 
-build d@(LClose:rs) = ([], rs)
-
-build d@(LOpen:rs) = ((LObjList inside):same, up)
+_build depth d@(LOpen:LLambda:(LNamed x):LDot:rs) = ((LFunc x inside):same, up)
     where
-        (inside, rest) = build rs
-        (same, up) = build rest
+        (inside, rest) = _build (depth+1) rs
+        (same, up) = _build depth rest
 
-build d = error "Error while parsing"
+_build 0 d@(LClose:rs) = error "Unmatched parenthesis."
+_build _ d@(LClose:rs) = ([], rs)
+
+_build depth d@(LOpen:rs) = ((LObjList inside):same, up)
+    where
+        (inside, rest) = _build (depth+1) rs
+        (same, up) = _build depth rest
+
+_build _ _ = error "Invalid expression."
 
 data Highlight = Base | Argument | Full deriving (Eq, Show)
 data LTObject = 
@@ -89,7 +98,7 @@ addTags (LFunc a x) = (LTFunc a (LTObjList (map addTags x) Base) Base)
 addTags (LObjList x) = (LTObjList (map addTags x) Base)
 
 parse :: String -> LTObject
-parse x = LTObjList (map addTags (fst $ build $ tokenize ("(" ++ x ++ ")"))) Base
+parse x = build $ tokenize x
 
 -- Functions for evaluating
 mapLT :: (LTObject -> (LTObject, Bool)) -> LTObject -> LTObject
@@ -280,10 +289,11 @@ expressionInteract exp msg = do
     else do
         putStr $ "Choose callable to evaluate (0-" ++ (show (callables-1)) ++ "): " 
         line <- getLine
-        alphaReduceIO unh_exp (read line)
-        let rep_exp = map_highlight Base (alphaRep unh_exp (read line))
-        putStrLn $ display $ unpack $ highlight_ith rep_exp (read line)
-        expressionInteract (unpack $ call_ith rep_exp (read line)) "\t(β-reduction)"
+        let i = read line
+        alphaReduceIO unh_exp i
+        let rep_exp = map_highlight Base (alphaRep unh_exp i)
+        putStrLn $ display $ unpack $ highlight_ith rep_exp i
+        expressionInteract (unpack $ call_ith rep_exp i) "\t(β-reduction)"
         where
             callables = cnt callable exp
             unh_exp = map_highlight Base exp
