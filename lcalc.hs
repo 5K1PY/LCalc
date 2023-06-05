@@ -133,8 +133,11 @@ map_highlight h = mapLT (set_highlight h)
 name :: String -> Int -> String
 name x i = x ++ (show i)
 
+remove_num :: String -> String
+remove_num = reverse . dropWhile isNumber . reverse
+
 free_name :: String -> [String] -> String
-free_name n taken = head [(name n i) | i <- [1..], not $ contains (name n i) taken]
+free_name n taken = head [new_name | i <- [1..], let new_name = (name (remove_num n) i), not $ contains new_name taken]
 
 collect_args :: LTObject -> [String]
 collect_args (LTVar _ _) = []
@@ -154,7 +157,7 @@ alpha obj@(LTObjList (f@(LTFunc a x _):arg:rest) h)
     | otherwise        = (LTObjList (replaced:arg:rest) Argument)
     where
         same = intersect (collect_args f) (collect_free_vars [] arg)
-        name = free_name (head same) (collect_free_vars [] f)
+        name = free_name (head same) (collect_free_vars [] f ++ collect_args f)
         replaced = (mapLT (renameArg (head same) name) f)
 alpha obj = error((display $ map_highlight Base $ obj) ++ " cannot be called")
 
@@ -303,6 +306,6 @@ alphaReduceIO exp i = do
         return ()
     else do
         putStrLn $ (display $ unpack exp2) ++ "\t(α-converison)"
-        (alphaReduceIO exp2 i)
+        (alphaReduceIO (map_highlight Base exp2) i)
     where
         exp2 = apply_ith alpha i exp
