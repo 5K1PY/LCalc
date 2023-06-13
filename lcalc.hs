@@ -311,10 +311,13 @@ showException ex = putStrLn (takeWhile (/= '\n') $ show ex)
 
 main :: IO()
 main = do
-    putStrLn "Enter lambda calculus expression:"
+    putStrLn "Enter lambda calculus expression (or \\q to quit):"
     exp <- getLine
-    catch (expressionInteract (unpack $ parse exp) "") showException
-    main
+    if (take 2 exp == "\\q") then do
+        return ()
+    else do
+        catch (expressionInteract (unpack $ parse exp) "") showException
+        main
 
 -- TODO: Fix invalid user input
 -- TODO: Exiting
@@ -324,16 +327,19 @@ expressionInteract exp msg = do
     if callables == 0 then do
         putStrLn "Expression is in normal form." 
     else do
-        putStr $ "Choose callable to evaluate (0-" ++ (show (callables-1)) ++ "):" 
+        putStr $ "Choose callable to evaluate (0-" ++ (show (callables-1)) ++ ") or \\q to quit: " 
         line <- getLine
-        let i = read line
-        alphaReduceIO unh_exp i
-        let rep_exp = map_highlight Base (alphaRep unh_exp i)
-        putStrLn $ display $ unpack $ highlight_ith rep_exp i
-        expressionInteract (unpack $ call_ith rep_exp i) "\t(β-reduction)"
-        where
-            callables = cnt callable exp
-            unh_exp = map_highlight Base exp
+        if (take 2 line == "\\q") then do
+            return ()
+        else do
+            let i = read line
+            alphaReduceIO unh_exp i
+            let rep_exp = map_highlight Base (alphaRep unh_exp i)
+            putStrLn $ display $ unpack $ highlight_ith rep_exp i
+            expressionInteract (unpack $ call_ith rep_exp i) "\t(β-reduction)"
+            where
+                callables = cnt callable exp
+                unh_exp = map_highlight Base exp
 
 alphaReduceIO :: LTObject -> Int -> IO()
 alphaReduceIO exp i = do
