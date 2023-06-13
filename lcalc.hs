@@ -320,7 +320,6 @@ main = do
         main
 
 -- TODO: Fix invalid user input
--- TODO: Exiting
 expressionInteract :: LTObject -> String -> IO()
 expressionInteract exp msg = do
     putStrLn $ (display exp) ++ msg
@@ -331,15 +330,22 @@ expressionInteract exp msg = do
         line <- getLine
         if (take 2 line == "\\q") then do
             return ()
-        else do
+        else if (not $ all isNumber line) then do
+            putStrLn $ line ++ " is not a non-negative number"
+            expressionInteract unh_exp ""
+        else do 
             let i = read line
-            alphaReduceIO unh_exp i
-            let rep_exp = map_highlight Base (alphaRep unh_exp i)
-            putStrLn $ display $ unpack $ highlight_ith rep_exp i
-            expressionInteract (unpack $ call_ith rep_exp i) "\t(β-reduction)"
-            where
-                callables = cnt callable exp
-                unh_exp = map_highlight Base exp
+            if (not (0 < (read line) && (read line) < callables)) then do
+                putStrLn $ "Number " ++ line ++ " not in bounds."
+                expressionInteract unh_exp ""
+            else do
+                alphaReduceIO unh_exp i
+                let rep_exp = map_highlight Base (alphaRep unh_exp i)
+                putStrLn $ display $ unpack $ highlight_ith rep_exp i
+                expressionInteract (unpack $ call_ith rep_exp i) "\t(β-reduction)"
+    where
+        callables = cnt callable exp
+        unh_exp = map_highlight Base exp
 
 alphaReduceIO :: LTObject -> Int -> IO()
 alphaReduceIO exp i = do
