@@ -50,35 +50,51 @@ data LObject =
   deriving Show
 
 -- Build AST
-build :: [LToken] -> LTObject
-build tokens
-    | length rest == 0 = LTObjList (map addTags parsed) Base
-    | otherwise        = error "Unmatched parenthesis."
+build :: [LToken] -> Either String LTObject
+build tokens =
+    case result of
+        Left err -> Left err
+        Right (parsed, rest) -> case length rest of
+            0 -> Right (LTObjList (map addTags parsed) Base)
+            _ -> Left "Unmatched parenthesis."
     where
-        (parsed, rest) = _build 0 tokens
+        result = _build 0 tokens
 
 -- Builds AST from tokens to first unmatched closing parenthesis, returns rest
-_build :: Int -> [LToken] -> ([LObject], [LToken])
-_build 0 [] = ([], [])
-_build _ [] = error "Unmatched parenthesis."
-_build depth d@((LNamed x):rs) = ((LVar x):same, rest)
+_build :: Int -> [LToken] -> Either String ([LObject], [LToken])
+_build 0 [] = Right ([], [])
+_build _ [] = Left "Unmatched parenthesis."
+_build depth d@((LNamed x):rs) = 
+    case result of
+        Left err -> Left err
+        Right (same, rest) -> Right ((LVar x):same, rest)
     where
-        (same, rest) = _build depth rs
+        result = _build depth rs
 
-_build depth d@(LOpen:LLambda:(LNamed x):LDot:rs) = ((LFunc x inside):same, up)
+_build depth d@(LOpen:LLambda:(LNamed x):LDot:rs) =
+    case result of
+        Left err -> Left err
+        Right (inside, rest) ->
+            case _build depth rest of
+                Left err -> Left err
+                Right (same, up) -> Right ((LFunc x inside):same, up)
     where
-        (inside, rest) = _build (depth+1) rs
-        (same, up) = _build depth rest
+        result = _build (depth+1) rs
 
-_build 0 d@(LClose:rs) = error "Unmatched parenthesis."
-_build _ d@(LClose:rs) = ([], rs)
+_build 0 d@(LClose:rs) = Left "Unmatched parenthesis."
+_build _ d@(LClose:rs) = Right ([], rs)
 
-_build depth d@(LOpen:rs) = ((LObjList inside):same, up)
+_build depth d@(LOpen:rs) =
+    case result of
+        Left err -> Left err
+        Right (inside, rest) ->
+            case _build depth rest of
+                Left err -> Left err
+                Right (same, up) -> Right ((LObjList inside):same, up)
     where
-        (inside, rest) = _build (depth+1) rs
-        (same, up) = _build depth rest
+        result = _build (depth+1) rs
 
-_build _ _ = error "Invalid expression."
+_build _ _ = Left "Invalid expression."
 
 data Highlight = Base | Argument | Full deriving (Eq, Show)
 data LTObject = 
@@ -101,7 +117,7 @@ addTags (LVar x) = (LTVar x Base)
 addTags (LFunc a x) = (LTFunc a (LTObjList (map addTags x) Base) Base)
 addTags (LObjList x) = (LTObjList (map addTags x) Base)
 
-parse :: String -> LTObject
+parse :: String -> Either String LTObject
 parse x = build $ tokenize x
 
 -- Apply given function to object and replace it
@@ -316,8 +332,13 @@ main = do
     if (take 2 exp == "\\q") then do
         return ()
     else do
-        catch (expressionInteract (unpack $ parse exp) "") showException
-        main
+        case parse exp of
+            Left err -> do
+                putStrLn err
+                main
+            Right ast -> do
+                expressionInteract (unpack ast) ""
+                main
 
 -- TODO: Fix invalid user input
 expressionInteract :: LTObject -> String -> IO()
