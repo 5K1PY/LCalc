@@ -14,13 +14,17 @@ Run the project
 $ runhaskell lcacl.hs
 ```
 You will be asked to enter the expression. Expression can contain:
- - variables consisting of TODO
- - function in form: `(\x. expr)` where `x` is an argument and `expr` is an expression 
+ - variables consisting of non-special characters (i.e. not parenthesis, backslash, dot and space)
+ - function in form: `(\x. expr)` where `x` is a variable and `expr` is an expression 
     - multiple arguments are not supported
  - sequence of functions and/or variables (separated by spaces and/or parenthesis) 
 
 Then you will be repeatedly asked to choose a function to evaluate.
 Enter the number of it and the program will do alpha-conversions (until necessary) and a beta-reduction.
+
+You can read more about lambda calculus here:
+ - https://en.wikipedia.org/wiki/Lambda_calculus
+ - https://brilliant.org/wiki/lambda-calculus/
 
 ## Architecture
 Expression is first tokenized and then parsed into Absract syntax tree.
