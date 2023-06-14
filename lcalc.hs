@@ -113,9 +113,6 @@ addTags (LVar x) = (LTVar x Base)
 addTags (LFunc a x) = (LTFunc a (LTObjList (map addTags x) Base) Base)
 addTags (LObjList x) = (LTObjList (map addTags x) Base)
 
-parse :: String -> Either String LTObject
-parse x = build $ tokenize x
-
 -- Apply given function to object and replace it
 -- If function returns True apply recursively on all subobjects
 mapLT :: (LTObject -> (LTObject, Bool)) -> LTObject -> LTObject
@@ -312,14 +309,16 @@ display_list h x = foldl (++) (display_one (length rest >= 1) True h first) (map
         first = head x
         rest = drop 1 x
 
--- Main loop
+-- Shorter aliases for functions in main loop 
+parse :: String -> Either String LTObject
+parse x = build $ tokenize x
+
 highlight_ith :: LTObject -> Int -> LTObject
 highlight_ith exp i = apply_ith highlight_beta i exp
+
 call_ith :: LTObject -> Int -> LTObject
 call_ith exp i = apply_ith beta i exp
 
-showException :: SomeException -> IO()
-showException ex = putStrLn (takeWhile (/= '\n') $ show ex)
 
 main :: IO()
 main = do
@@ -332,11 +331,11 @@ main = do
             Left err -> do
                 putStrLn err
                 main
-            Right ast -> do
-                expressionInteract (unpack ast) ""
+            Right parsed_exp -> do
+                expressionInteract (unpack parsed_exp) ""
                 main
 
--- TODO: Fix invalid user input
+-- Lets user do repeated beta-reductions until exp is in normal form
 expressionInteract :: LTObject -> String -> IO()
 expressionInteract exp msg = do
     putStrLn $ (display exp) ++ msg
@@ -364,6 +363,7 @@ expressionInteract exp msg = do
         callables = cnt callable exp
         unh_exp = map_highlight Base exp
 
+-- Shows repeated alpha-conversion
 alphaReduceIO :: LTObject -> Int -> IO()
 alphaReduceIO exp i = do
     if (exp == exp2) then do
