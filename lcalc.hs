@@ -1,10 +1,6 @@
 import Control.Exception
 import Data.Char
 import Data.List
-import Debug.Trace
-
--- TODO: Remove debugging
-debug = flip trace
 
 -- Utilities
 boolToInt :: Bool -> Int
