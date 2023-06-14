@@ -335,7 +335,7 @@ expressionInteract exp msg = do
             expressionInteract unh_exp ""
         else do 
             let i = read line
-            if (not (0 < (read line) && (read line) < callables)) then do
+            if (not (0 <= (read line) && (read line) < callables)) then do
                 putStrLn $ "Number " ++ line ++ " not in bounds."
                 expressionInteract unh_exp ""
             else do
